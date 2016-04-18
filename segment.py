@@ -4,7 +4,6 @@ headerLen = 8
 
 class segment():
     def __init__(self, seqNo, size, data):
-        print data
         self.seqNo = seqNo
         self.type = 0
         self.size = size
@@ -14,9 +13,6 @@ class segment():
         self.data[6]=self.data[7]=85
         for count in range(0,len(data)):
             self.data[headerLen+count]=ord(data[count])
-        print self.data
-
-        print "some"
         
     def getData(self):
         return self.data
@@ -46,7 +42,7 @@ class segmentResponse():
             self.type = 0
         elif self.data[6] == 0xAA and  self.data[7] == 0xAA:
             self.type = 1
-        print ""
+            
     def getData(self):
         return self.data
     

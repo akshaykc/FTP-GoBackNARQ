@@ -6,6 +6,8 @@ Created on Apr 13, 2016
 import socket
 import threading
 import segment
+from threading import Timer
+
 
 headerLen = 8
 
@@ -14,6 +16,12 @@ bufTail = 0
 bufferWindow = []
 bufSize = 0
 timer = []
+
+
+mutex = threading.Semaphore(1)
+empty = threading.Semaphore(0)
+item = threading.Semaphore(0)
+
 class udpClient(threading.Thread):
     def __init__(self, name, hostName, udpServerPort, fileName, WindowSize, MSS):
         threading.Thread.__init__(self)
@@ -27,20 +35,43 @@ class udpClient(threading.Thread):
         self.WindowSize = WindowSize
         self.MSS = MSS
         self.segSize = MSS + headerLen
-        self.mutex = threading.Semaphore(1)
-        self.empty = threading.Semaphore(WindowSize)
-        self.item = threading.Semaphore(0)
+        
+        for i in range(0, self.WindowSize):
+            empty.release()
         bufSize = WindowSize
         self.retrasmiTO = 0.5
         bufferWindow = [None for i in range(0,bufSize)]
         timer = [None for i in range(bufSize)]
         
-        
-        
         self.sock = socket.socket(socket.AF_INET, # Internet
                     socket.SOCK_DGRAM) # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     
+    def retransmit(self, index):
+        global bufferWindow
+        global bufTail
+        global timer
+        print "Timeout for sequence number ", bufferWindow[index].getSeqNo()
+        data = bufferWindow[index].getData()
+        dataToSend = bytearray(data)
+        self.sock.sendto(dataToSend,(self.hostName, self.udpServerPort))
+        
+    class RetransmittingTimer():
+        def __init__(self, interval, f, *args):
+            self.interval = interval
+            self.f = f
+            self.args = args
+            
+        def callback(self):
+            self.f(*self.args)
+            self.start()
+
+        def cancel(self):
+            self.timer.cancel()
+
+        def start(self):
+            self.timer = threading.Timer(self.interval, self.callback)
+            self.timer.start()
     
     def sendToServer(self, segment):
         global bufferWindow
@@ -48,23 +79,26 @@ class udpClient(threading.Thread):
         global bufHead
         global bufSize
         global timer
+        global empty
+        global mutex
+        global item
         
-        self.empty.acquire()
-        self.mutex.acquire()
+        empty.acquire()
+        mutex.acquire()
         
         bufferWindow[bufTail] = segment
         dataToSend = bytearray(segment.getData())
         
         self.sock.sendto(dataToSend, (self.hostName, self.udpServerPort))
         
-        timer[bufTail] = threading.Timer(self.retrasmiTO, self.retransmitTimer, [bufTail])
+        #timer[bufTail] = threading.Timer(self.retrasmiTO, self.retransmitTimer, [bufTail])
+        #timer[bufTail].start()
+        timer[bufTail] = self.RetransmittingTimer(0.001, self.retransmit,bufTail)
         timer[bufTail].start()
-        
         bufTail = (bufTail + 1) % bufSize
         
-        self.mutex.release()
-        self.item.release()
-        
+        mutex.release()
+        item.release()
         
     def rdt_send(self):
         slidingWindowProtocol = self.slidingWindow(self.sock)
@@ -83,7 +117,7 @@ class udpClient(threading.Thread):
                     self.sendToServer(segmentToSend)
                     seqNo = seqNo + count
                     count = 0
-                    data = [0 for _ in range(0,len(data))]
+                    data = []
                     if  byte == "":
                         break
                 byte = inputFile.read(1)
@@ -96,18 +130,6 @@ class udpClient(threading.Thread):
         #print "UDP target port:", self.udpServerPort
         #print "message:", message
         print "Client closed"
-        
-    
-    def retransmitTimer(self, index):
-        global bufferWindow
-        global bufTail
-        global timer
-        self.retrasmiTO = 0.5
-        print "Timeout for sequence number ", bufferWindow[index].getSeqNo()
-        data = bufferWindow[index].getData()
-        dataToSend = bytearray(data)
-        self.sock.sendto(dataToSend,(self.hostName, self.udpServerPort))
-        timer[index].start()
             
     class slidingWindow(threading.Thread):
         def __init__(self, sock):
@@ -118,17 +140,13 @@ class udpClient(threading.Thread):
         def run(self):
             while self.runState:
                 global bufHead
+                global bufferWindow
                 data, addr = self.sock.recvfrom(1024)
                 data = bytearray(data)
-                print "Received message :", data
+                #print "Received message :", data
                 recvdSegment = segment.segmentResponse(data, len(data))
-                typeSim = recvdSegment.getType()
                 if recvdSegment.getType() == 1:
-                    recvdSegmentSeqNo = recvdSegment.getSeqNo()
-                    print type(buffer[bufHead])
-                    bufferSegmentSeqNo = buffer[bufHead].getSeqNo()
-                    bufferSegmentDataSize = buffer[bufHead].getDataSize()
-                    if recvdSegment.getSeqNo() == buffer[bufHead].getSeqNo() + buffer[bufHead].getDataSize():
+                    if recvdSegment.getSeqNo() == bufferWindow[bufHead].getSeqNo() + bufferWindow[bufHead].getDataSize():
                         self.processRcvdSegment(recvdSegment)
                     #elif recvdSegment.getSeqNo() == buffer[self.bufHead].getSeqNo():
         
@@ -136,12 +154,15 @@ class udpClient(threading.Thread):
             global bufHead
             global bufSize
             global timer
-            self.item.acquire()
-            self.mutex.acquire()
+            global empty
+            global mutex
+            global item
+            item.acquire()
+            mutex.acquire()
             
             timer[bufHead].cancel()
             bufHead = (bufHead + 1) % bufSize
             
-            self.mutex.release()
-            self.empty.release()
+            mutex.release()
+            empty.release()
                         

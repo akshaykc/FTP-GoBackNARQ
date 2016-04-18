@@ -22,6 +22,7 @@ class udpServer(threading.Thread):
                     socket.SOCK_DGRAM) # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((self.hostName, self.udpServerPort))
+        open(self.fileName, 'w').close()
     
     def run(self):
         print "thread start server\n"
@@ -33,22 +34,21 @@ class udpServer(threading.Thread):
             data = bytearray(data)
             remoteHost = addr[0]
             remotePort = addr[1]
-            print "received message:", data, addr
+            #print "received message:", data, addr
                 
             segRcvd = segment.segmentResponse(data, len(data))
             checkSum = self.check(segRcvd)
             self.randomNum = random.uniform(0.0,1.0)
                 
             if checkSum == 0 and self.randomNum >= self.packetLossProb:
-                print "Get ", segRcvd.getSeqNo(), " waiting ", seq
+                #print "Get ", segRcvd.getSeqNo(), " waiting ", seq
                 if firstPacket or segRcvd.getSeqNo() == seq:
                     seq = segRcvd.getSeqNo() + segRcvd.getDataSize()
                     firstPacket = False
-                    print type(segRcvd.getDataWithoutHeader())
                     outputString = ''.join(chr(x) for x in segRcvd.getDataWithoutHeader())
-                    print outputString
-                    with open(self.fileName, 'wb') as outputFile: 
+                    with open(self.fileName, 'a') as outputFile: 
                         outputFile.write(outputString)
+                        #print outputString
                 else:
                     seq = seq
                     
@@ -57,7 +57,8 @@ class udpServer(threading.Thread):
                 self.sock.sendto(dataToSend, (remoteHost, remotePort))
                     
             elif self.randomNum < self.packetLossProb:
-                print "Packet loss, sequence number = ", segRcvd.getSeqNo()
+                #print "Packet loss, sequence number = ", segRcvd.getSeqNo()
+                print ""
         outputFile.close()
         self.sock.close()
         
