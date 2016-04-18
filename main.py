@@ -7,8 +7,6 @@ Created on Apr 16, 2016
 import udpClient
 import udpServer
 
-def main():
-    print "strng"
 
 if __name__ == '__main__':
     # Create new threads

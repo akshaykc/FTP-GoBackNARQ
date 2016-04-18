@@ -9,24 +9,33 @@ import segment
 
 headerLen = 8
 
+bufHead = 0
+bufTail = 0
+bufferWindow = []
+bufSize = 0
+timer = []
 class udpClient(threading.Thread):
     def __init__(self, name, hostName, udpServerPort, fileName, WindowSize, MSS):
         threading.Thread.__init__(self)
+        global bufSize
+        global bufferWindow
+        global timer
         self.name = name
         self.hostName = hostName
         self.udpServerPort = udpServerPort
         self.fileName = fileName
         self.WindowSize = WindowSize
-        self.bufSize = WindowSize
         self.MSS = MSS
         self.segSize = MSS + headerLen
-        self.bufHead = 0
-        self.bufTail = 0
         self.mutex = threading.Semaphore(1)
         self.empty = threading.Semaphore(WindowSize)
         self.item = threading.Semaphore(0)
-        self.buffer = [None for i in range(self.bufSize)]
-        self.timer = [None for i in range(self.bufSize)]
+        bufSize = WindowSize
+        self.retrasmiTO = 0.5
+        bufferWindow = [None for i in range(0,bufSize)]
+        timer = [None for i in range(bufSize)]
+        
+        
         
         self.sock = socket.socket(socket.AF_INET, # Internet
                     socket.SOCK_DGRAM) # UDP
@@ -34,16 +43,24 @@ class udpClient(threading.Thread):
     
     
     def sendToServer(self, segment):
+        global bufferWindow
+        global bufTail
+        global bufHead
+        global bufSize
+        global timer
+        
         self.empty.acquire()
         self.mutex.acquire()
         
-        self.buffer[self.bufTail] = segment
-        self.sock.sendto("segment.getData()", (self.hostName, self.udpServerPort))
+        bufferWindow[bufTail] = segment
+        dataToSend = bytearray(segment.getData())
         
-        self.timer[self.bufTail] = threading.Timer(0.2, self.retransmitTimer, [self.bufTail])
-        self.timer[self.bufTail].start()
+        self.sock.sendto(dataToSend, (self.hostName, self.udpServerPort))
         
-        self.bufTail = (self.bufTail + 1) % self.bufSize
+        timer[bufTail] = threading.Timer(self.retrasmiTO, self.retransmitTimer, [bufTail])
+        timer[bufTail].start()
+        
+        bufTail = (bufTail + 1) % bufSize
         
         self.mutex.release()
         self.item.release()
@@ -54,17 +71,21 @@ class udpClient(threading.Thread):
         slidingWindowProtocol.start()
         seqNo = 0
         count = 0
-        data = bytearray([0 for _ in range(self.MSS)])
+        data = []
         with open(self.fileName, "rb") as inputFile:
             byte = inputFile.read(1)
-            while byte != "":
-                data[count] = byte
-                count = count + 1
-                if count == self.MSS:
-                    self.sendToServer(segment(seqNo, count, data))
+            while True:
+                if  byte != "":
+                    data.append(byte)
+                    count = count + 1
+                if count == self.MSS or byte == "":
+                    segmentToSend = segment.segment(seqNo, count, data)
+                    self.sendToServer(segmentToSend)
                     seqNo = seqNo + count
                     count = 0
-                    data = [0 for _ in range(self.MSS)]
+                    data = [0 for _ in range(0,len(data))]
+                    if  byte == "":
+                        break
                 byte = inputFile.read(1)
         
     def run(self):
@@ -78,12 +99,15 @@ class udpClient(threading.Thread):
         
     
     def retransmitTimer(self, index):
-        print "Timeout for sequence number ", buffer[index].getSeqNo()
-        self.sock.sendto(buffer[index].getData(),(self.hostName, self.udpServerPort))
-        self.timer[self.bufTail].start()
-        
-        
-        
+        global bufferWindow
+        global bufTail
+        global timer
+        self.retrasmiTO = 0.5
+        print "Timeout for sequence number ", bufferWindow[index].getSeqNo()
+        data = bufferWindow[index].getData()
+        dataToSend = bytearray(data)
+        self.sock.sendto(dataToSend,(self.hostName, self.udpServerPort))
+        timer[index].start()
             
     class slidingWindow(threading.Thread):
         def __init__(self, sock):
@@ -93,21 +117,30 @@ class udpClient(threading.Thread):
             
         def run(self):
             while self.runState:
+                global bufHead
                 data, addr = self.sock.recvfrom(1024)
+                data = bytearray(data)
                 print "Received message :", data
                 recvdSegment = segment.segmentResponse(data, len(data))
-                if recvdSegment.type() == 1:
-                    if recvdSegment.getSeqNo() == buffer[self.bufHead].getSeqNo() + \
-                                            buffer[self.bufHead].getDataSize():
+                typeSim = recvdSegment.getType()
+                if recvdSegment.getType() == 1:
+                    recvdSegmentSeqNo = recvdSegment.getSeqNo()
+                    print type(buffer[bufHead])
+                    bufferSegmentSeqNo = buffer[bufHead].getSeqNo()
+                    bufferSegmentDataSize = buffer[bufHead].getDataSize()
+                    if recvdSegment.getSeqNo() == buffer[bufHead].getSeqNo() + buffer[bufHead].getDataSize():
                         self.processRcvdSegment(recvdSegment)
                     #elif recvdSegment.getSeqNo() == buffer[self.bufHead].getSeqNo():
         
         def processRcvdSegment(self, segment):
+            global bufHead
+            global bufSize
+            global timer
             self.item.acquire()
             self.mutex.acquire()
             
-            self.timer[self.bufHead].cancel()
-            self.bufHead = (self.bufHead + 1) % self.bufSize
+            timer[bufHead].cancel()
+            bufHead = (bufHead + 1) % bufSize
             
             self.mutex.release()
             self.empty.release()
