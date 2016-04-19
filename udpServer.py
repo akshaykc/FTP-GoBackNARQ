@@ -9,10 +9,9 @@ import segment
 import random
 
 class udpServer(threading.Thread):
-    def __init__(self, name, hostName, udpServerPort, fileName, packetLossProb):
+    def __init__(self, udpServerPort, fileName, packetLossProb):
         threading.Thread.__init__(self)
-        self.name = name
-        self.hostName = hostName
+        #self.hostName = hostName
         self.udpServerPort = udpServerPort
         self.fileName = fileName
         self.packetLossProb = float(packetLossProb)
@@ -21,7 +20,7 @@ class udpServer(threading.Thread):
         self.sock = socket.socket(socket.AF_INET, # Internet
                     socket.SOCK_DGRAM) # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((self.hostName, self.udpServerPort))
+        self.sock.bind(('localhost', self.udpServerPort))
         open(self.fileName, 'w').close()
     
     def run(self):
@@ -39,7 +38,7 @@ class udpServer(threading.Thread):
             segRcvd = segment.segmentResponse(data, len(data))
             checkSum = self.check(segRcvd)
             self.randomNum = random.uniform(0.0,1.0)
-                
+            #print self.packetLossProb
             if checkSum == 0 and self.randomNum >= self.packetLossProb:
                 #print "Get ", segRcvd.getSeqNo(), " waiting ", seq
                 if firstPacket or segRcvd.getSeqNo() == seq:
@@ -57,8 +56,7 @@ class udpServer(threading.Thread):
                 self.sock.sendto(dataToSend, (remoteHost, remotePort))
                     
             elif self.randomNum < self.packetLossProb:
-                #print "Packet loss, sequence number = ", segRcvd.getSeqNo()
-                print ""
+                print "Packet loss, sequence number = ", segRcvd.getSeqNo()
         outputFile.close()
         self.sock.close()
         

@@ -10,10 +10,11 @@ import udpServer
 
 if __name__ == '__main__':
     # Create new threads
-    udpServerThread = udpServer.udpServer("udpServer", 
-                            'localhost', 7735, "serverOutput.txt", 0)
-    udpClientThread = udpClient.udpClient("udpClient", 
-                            'localhost', 7735, "clientInput.txt", 10, 100)
+    #port# file-name p
+    udpServer = udpServer.udpServer(7735, "serverOutput.txt", 0.05)
+    #server-host-name server-port file-name N MSS
+    udpClient = udpClient.udpClient('localhost', 7735, 
+                                          "clientInput.txt", 10, 500)
     
-    udpServerThread.start()
-    udpClientThread.start()
+    udpServer.start()
+    udpClient.start()

@@ -23,12 +23,11 @@ empty = threading.Semaphore(0)
 item = threading.Semaphore(0)
 
 class udpClient(threading.Thread):
-    def __init__(self, name, hostName, udpServerPort, fileName, WindowSize, MSS):
+    def __init__(self, hostName, udpServerPort, fileName, WindowSize, MSS):
         threading.Thread.__init__(self)
         global bufSize
         global bufferWindow
         global timer
-        self.name = name
         self.hostName = hostName
         self.udpServerPort = udpServerPort
         self.fileName = fileName
@@ -93,7 +92,7 @@ class udpClient(threading.Thread):
         
         #timer[bufTail] = threading.Timer(self.retrasmiTO, self.retransmitTimer, [bufTail])
         #timer[bufTail].start()
-        timer[bufTail] = self.RetransmittingTimer(0.001, self.retransmit,bufTail)
+        timer[bufTail] = self.RetransmittingTimer(0.2, self.retransmit,bufTail)
         timer[bufTail].start()
         bufTail = (bufTail + 1) % bufSize
         
